@@ -1,0 +1,23 @@
+{
+  "name": "draw-and-guess-online",
+  "version": "1.0.0",
+  "description": "A multiplayer draw-and-guess web game starter built with Node.js, Express, and Socket.IO.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "node",
+    "express",
+    "socket.io",
+    "draw",
+    "guess",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.3",
+    "socket.io": "^4.7.5"
+  }
+}

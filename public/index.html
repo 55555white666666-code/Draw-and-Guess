@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>&#20320;&#30011;&#25105;&#29468;</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="home-view" id="homeView" aria-labelledby="gameTitle">
+        <div class="home-panel">
+          <header class="home-header">
+            <p class="eyebrow">Multiplayer Drawing Game</p>
+            <h1 id="gameTitle">&#20320;&#30011;&#25105;&#29468;</h1>
+            <div class="connection" id="connectionStatus">&#36830;&#25509;&#20013;...</div>
+          </header>
+
+          <form class="lobby-form" id="lobbyForm">
+            <label for="nicknameInput">&#26165;&#31216;</label>
+            <input id="nicknameInput" type="text" maxlength="20" placeholder="&#35831;&#36755;&#20837;&#26165;&#31216;" autocomplete="nickname" />
+
+            <button class="primary-button" id="createRoomButton" type="button">&#21019;&#24314;&#25151;&#38388;</button>
+
+            <label for="roomIdInput">&#21152;&#20837;&#25151;&#38388;</label>
+            <div class="join-row">
+              <input id="roomIdInput" type="text" inputmode="numeric" maxlength="6" placeholder="&#36755;&#20837; 6 &#20301;&#25151;&#38388;&#21495;" />
+              <button class="secondary-button" id="joinRoomButton" type="button">&#21152;&#20837;&#25151;&#38388;</button>
+            </div>
+
+            <p class="error-message" id="errorMessage" role="alert"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="room-view hidden" id="roomView" aria-labelledby="roomTitle">
+        <header class="room-header">
+          <div>
+            <p class="eyebrow">Room Lobby</p>
+            <h1 id="roomTitle">&#25151;&#38388; <span id="roomIdText"></span></h1>
+            <p class="room-count" id="roomCountText"></p>
+          </div>
+          <div class="player-badge">&#25105;&#30340; ID&#65306;<span id="playerIdText"></span></div>
+        </header>
+
+        <section class="room-toolbar" aria-label="&#25151;&#38388;&#25805;&#20316;">
+          <button class="secondary-button" id="copyRoomButton" type="button">
+            <span class="full-label">&#22797;&#21046;&#25151;&#38388;&#21495;</span>
+            <span class="compact-label">&#22797;&#21046;</span>
+          </button>
+          <button class="secondary-button" id="renameButton" type="button">
+            <span class="full-label">&#20462;&#25913;&#26165;&#31216;</span>
+            <span class="compact-label">&#25913;&#21517;</span>
+          </button>
+          <button class="danger-button" id="leaveRoomButton" type="button">
+            <span class="full-label">&#31163;&#24320;&#25151;&#38388;</span>
+            <span class="compact-label">&#31163;&#24320;</span>
+          </button>
+          <span class="notice" id="roomNotice" role="status"></span>
+        </section>
+
+        <section class="room-main">
+          <div class="room-card players-card">
+            <div class="card-heading">
+              <h2>&#29609;&#23478;&#21015;&#34920;</h2>
+              <span id="playerRangeText"></span>
+            </div>
+            <ul class="player-list" id="playerList"></ul>
+          </div>
+          <div class="room-card waiting-card">
+            <h2>&#31561;&#24453;&#24320;&#22987;</h2>
+            <p class="muted">&#24403;&#21069;&#21482;&#23454;&#29616;&#25151;&#38388;&#22823;&#21381;&#21151;&#33021;&#65292;&#26242;&#19981;&#21152;&#20837;&#30011;&#26495;&#21644;&#28216;&#25103;&#24320;&#22987;&#21151;&#33021;&#12290;</p>
+            <div class="room-settings">
+              <label for="maxPlayersInput">&#25151;&#38388;&#20154;&#25968;&#19978;&#38480;</label>
+              <div class="limit-row">
+                <input id="maxPlayersInput" type="number" min="2" max="8" step="1" />
+                <button class="secondary-button" id="updateMaxPlayersButton" type="button">&#20445;&#23384;</button>
+              </div>
+              <p class="muted small-text" id="roomLimitHint"></p>
+            </div>
+          </div>
+          <div class="room-card drawing-card">
+            <div class="card-heading">
+              <h2>&#26412;&#22320;&#30011;&#26495;</h2>
+              <span>&#26242;&#19981;&#21516;&#27493;</span>
+            </div>
+            <div class="drawing-tools" aria-label="&#30011;&#26495;&#24037;&#20855;">
+              <div class="tool-group">
+                <button class="tool-button active" id="brushToolButton" type="button">&#30011;&#31508;</button>
+                <button class="tool-button" id="eraserToolButton" type="button">&#27233;&#30382;&#25830;</button>
+              </div>
+              <div class="color-presets" id="colorPresets" aria-label="&#39044;&#35774;&#39068;&#33394;">
+                <button class="color-swatch active" type="button" data-color="#172033" aria-label="&#40657;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#e03131" aria-label="&#32418;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#f08c00" aria-label="&#27225;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#f9d423" aria-label="&#40644;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#2f9e44" aria-label="&#32511;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#1971c2" aria-label="&#34013;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#7048e8" aria-label="&#32043;&#33394;"></button>
+                <button class="color-swatch" type="button" data-color="#f06595" aria-label="&#31881;&#33394;"></button>
+                <button class="color-swatch white-swatch" type="button" data-color="#ffffff" aria-label="&#30333;&#33394;"></button>
+              </div>
+              <label class="tool-control" for="brushColorInput">
+                <span>&#39068;&#33394;</span>
+                <input id="brushColorInput" type="color" value="#172033" />
+              </label>
+              <label class="tool-control size-control" for="brushSizeInput">
+                <span>&#31895;&#32454; <strong id="brushSizeText">6</strong></span>
+                <input id="brushSizeInput" type="range" min="2" max="36" value="6" />
+              </label>
+              <button class="danger-button" id="clearCanvasButton" type="button">&#28165;&#31354;&#30011;&#26495;</button>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="drawingCanvas" aria-label="&#26412;&#22320;&#30011;&#26495;"></canvas>
+            </div>
+          </div>
+          <div class="room-card chat-card">
+            <div class="card-heading">
+              <h2>&#25151;&#38388;&#32842;&#22825;</h2>
+              <span>&#26222;&#36890;&#32842;&#22825;</span>
+            </div>
+            <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+            <form class="chat-form" id="chatForm">
+              <input id="chatInput" type="text" maxlength="100" placeholder="&#36755;&#20837;&#32842;&#22825;&#28040;&#24687;" autocomplete="off" />
+              <button class="primary-button" id="sendChatButton" type="submit">&#21457;&#36865;</button>
+            </form>
+            <p class="chat-error" id="chatError" role="alert"></p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/client.js"></script>
+  </body>
+</html>
