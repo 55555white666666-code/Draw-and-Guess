@@ -42,9 +42,16 @@ let drawingTool = "brush";
 let isDrawing = false;
 let activePointerId = null;
 let lastPoint = null;
+let lastSyncedPoint = null;
+let activeDrawStyle = null;
+let pendingSyncPoint = null;
+let pendingSyncStyle = null;
+let drawSyncTimer = null;
+let lastDrawSentAt = 0;
 let canvasPixelRatio = 1;
 let canvasResizeObserver = null;
 const chatMessageMaxLength = 100;
+const drawSendIntervalMs = 25;
 
 function setConnectionStatus(text, className) {
   connectionStatus.textContent = text;
@@ -248,17 +255,47 @@ function getCanvasPoint(event) {
   };
 }
 
-function applyDrawingStyle() {
+function clampRatio(value) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function getCurrentDrawStyle() {
+  return {
+    color: brushColorInput.value,
+    size: Number(brushSizeInput.value),
+    tool: drawingTool,
+  };
+}
+
+function getNormalizedPoint(point) {
+  const rect = drawingCanvas.getBoundingClientRect();
+
+  return {
+    x: clampRatio(point.x / rect.width),
+    y: clampRatio(point.y / rect.height),
+  };
+}
+
+function getCanvasPointFromRatio(x, y) {
+  const rect = drawingCanvas.getBoundingClientRect();
+
+  return {
+    x: clampRatio(x) * rect.width,
+    y: clampRatio(y) * rect.height,
+  };
+}
+
+function applyDrawingStyle(style = getCurrentDrawStyle()) {
   const context = getCanvasContext();
 
-  context.lineWidth = Number(brushSizeInput.value);
+  context.lineWidth = style.size;
 
-  if (drawingTool === "eraser") {
+  if (style.tool === "eraser") {
     context.globalCompositeOperation = "destination-out";
     context.strokeStyle = "rgba(0, 0, 0, 1)";
   } else {
     context.globalCompositeOperation = "source-over";
-    context.strokeStyle = brushColorInput.value;
+    context.strokeStyle = style.color;
   }
 }
 
@@ -286,25 +323,118 @@ function setBrushColor(color) {
   renderSelectedColor();
 }
 
-function drawLine(point) {
+function drawStrokeSegment(fromPoint, toPoint, style) {
   const context = getCanvasContext();
 
-  applyDrawingStyle();
+  applyDrawingStyle(style);
   context.beginPath();
-  context.moveTo(lastPoint.x, lastPoint.y);
-  context.lineTo(point.x, point.y);
-  context.stroke();
+
+  if (Math.abs(fromPoint.x - toPoint.x) < 0.01 && Math.abs(fromPoint.y - toPoint.y) < 0.01) {
+    context.arc(toPoint.x, toPoint.y, style.size / 2, 0, Math.PI * 2);
+    context.fillStyle = style.tool === "eraser" ? "rgba(0, 0, 0, 1)" : style.color;
+    context.fill();
+  } else {
+    context.moveTo(fromPoint.x, fromPoint.y);
+    context.lineTo(toPoint.x, toPoint.y);
+    context.stroke();
+  }
+}
+
+function drawLine(point) {
+  const style = activeDrawStyle || getCurrentDrawStyle();
+
+  drawStrokeSegment(lastPoint, point, style);
   lastPoint = point;
 }
 
 function drawDot(point) {
-  const context = getCanvasContext();
+  const style = activeDrawStyle || getCurrentDrawStyle();
 
-  applyDrawingStyle();
-  context.beginPath();
-  context.arc(point.x, point.y, Number(brushSizeInput.value) / 2, 0, Math.PI * 2);
-  context.fillStyle = drawingTool === "eraser" ? "rgba(0, 0, 0, 1)" : brushColorInput.value;
-  context.fill();
+  drawStrokeSegment(point, point, style);
+}
+
+function createDrawStroke(fromPoint, toPoint, style) {
+  const from = getNormalizedPoint(fromPoint);
+  const to = getNormalizedPoint(toPoint);
+
+  return {
+    roomId: currentRoomId,
+    fromX: from.x,
+    fromY: from.y,
+    toX: to.x,
+    toY: to.y,
+    color: style.color,
+    size: style.size,
+    tool: style.tool,
+  };
+}
+
+function emitDrawStroke(fromPoint, toPoint, style) {
+  if (!currentRoomId) {
+    return;
+  }
+
+  socket.emit("draw", createDrawStroke(fromPoint, toPoint, style));
+  lastDrawSentAt = Date.now();
+}
+
+function flushPendingDrawStroke() {
+  if (!pendingSyncPoint || !lastSyncedPoint || !pendingSyncStyle) {
+    return;
+  }
+
+  emitDrawStroke(lastSyncedPoint, pendingSyncPoint, pendingSyncStyle);
+  lastSyncedPoint = pendingSyncPoint;
+  pendingSyncPoint = null;
+  pendingSyncStyle = null;
+
+  if (drawSyncTimer) {
+    clearTimeout(drawSyncTimer);
+    drawSyncTimer = null;
+  }
+}
+
+function scheduleDrawStroke(point, style) {
+  if (!lastSyncedPoint) {
+    lastSyncedPoint = point;
+  }
+
+  pendingSyncPoint = point;
+  pendingSyncStyle = style;
+
+  const elapsed = Date.now() - lastDrawSentAt;
+
+  if (elapsed >= drawSendIntervalMs) {
+    flushPendingDrawStroke();
+    return;
+  }
+
+  if (!drawSyncTimer) {
+    drawSyncTimer = setTimeout(flushPendingDrawStroke, drawSendIntervalMs - elapsed);
+  }
+}
+
+function renderRemoteDrawStroke(stroke) {
+  if (!stroke || stroke.roomId !== currentRoomId) {
+    return;
+  }
+
+  resizeDrawingCanvas();
+
+  const fromPoint = getCanvasPointFromRatio(stroke.fromX, stroke.fromY);
+  const toPoint = getCanvasPointFromRatio(stroke.toX, stroke.toY);
+  const style = {
+    color: stroke.color,
+    size: stroke.size,
+    tool: stroke.tool,
+  };
+
+  drawStrokeSegment(fromPoint, toPoint, style);
+}
+
+function replayDrawingHistory(history = []) {
+  clearDrawingCanvas();
+  history.forEach(renderRemoteDrawStroke);
 }
 
 function beginDrawing(event) {
@@ -317,9 +447,12 @@ function beginDrawing(event) {
 
   isDrawing = true;
   activePointerId = event.pointerId;
+  activeDrawStyle = getCurrentDrawStyle();
   lastPoint = getCanvasPoint(event);
+  lastSyncedPoint = lastPoint;
   drawingCanvas.setPointerCapture(event.pointerId);
   drawDot(lastPoint);
+  emitDrawStroke(lastPoint, lastPoint, activeDrawStyle);
 }
 
 function continueDrawing(event) {
@@ -328,7 +461,10 @@ function continueDrawing(event) {
   }
 
   event.preventDefault();
-  drawLine(getCanvasPoint(event));
+  const point = getCanvasPoint(event);
+
+  drawLine(point);
+  scheduleDrawStroke(point, activeDrawStyle);
 }
 
 function endDrawing(event) {
@@ -337,9 +473,12 @@ function endDrawing(event) {
   }
 
   event.preventDefault();
+  flushPendingDrawStroke();
   isDrawing = false;
   activePointerId = null;
   lastPoint = null;
+  lastSyncedPoint = null;
+  activeDrawStyle = null;
 
   if (drawingCanvas.hasPointerCapture(event.pointerId)) {
     drawingCanvas.releasePointerCapture(event.pointerId);
@@ -373,9 +512,12 @@ function initializeDrawingBoard() {
   drawingCanvas.addEventListener("pointerup", endDrawing);
   drawingCanvas.addEventListener("pointercancel", endDrawing);
   drawingCanvas.addEventListener("lostpointercapture", () => {
+    flushPendingDrawStroke();
     isDrawing = false;
     activePointerId = null;
     lastPoint = null;
+    lastSyncedPoint = null;
+    activeDrawStyle = null;
   });
 
   brushToolButton.addEventListener("click", () => setDrawingTool("brush"));
@@ -392,7 +534,13 @@ function initializeDrawingBoard() {
   brushSizeInput.addEventListener("input", () => {
     brushSizeText.textContent = brushSizeInput.value;
   });
-  clearCanvasButton.addEventListener("click", clearDrawingCanvas);
+  clearCanvasButton.addEventListener("click", () => {
+    clearDrawingCanvas();
+
+    if (currentRoomId) {
+      socket.emit("draw:clear", { roomId: currentRoomId });
+    }
+  });
   window.addEventListener("resize", resizeDrawingCanvas);
 
   if ("ResizeObserver" in window) {
@@ -450,7 +598,7 @@ function renderRoom(room) {
   renderPlayers(room);
 }
 
-function showRoom(room, player) {
+function showRoom(room, player, drawHistory = []) {
   currentPlayerId = player.playerId;
   playerIdText.textContent = player.playerId;
   clearChatMessages();
@@ -460,7 +608,7 @@ function showRoom(room, player) {
   roomView.classList.remove("hidden");
   requestAnimationFrame(() => {
     resizeDrawingCanvas();
-    clearDrawingCanvas();
+    replayDrawingHistory(drawHistory);
   });
   showNotice("");
 }
@@ -496,7 +644,7 @@ function handleRoomResponse(response, fallbackMessage) {
     return;
   }
 
-  showRoom(response.room, response.player);
+  showRoom(response.room, response.player, response.drawHistory || []);
 }
 
 initializeDrawingBoard();
@@ -670,4 +818,14 @@ socket.on("room:update", (room) => {
 
 socket.on("chat:message", (message) => {
   appendChatMessage(message);
+});
+
+socket.on("draw", (stroke) => {
+  renderRemoteDrawStroke(stroke);
+});
+
+socket.on("draw:clear", ({ roomId } = {}) => {
+  if (roomId === currentRoomId) {
+    clearDrawingCanvas();
+  }
 });

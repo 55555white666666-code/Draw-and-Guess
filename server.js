@@ -12,6 +12,8 @@ const PORT = process.env.PORT || 3001;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
 const CHAT_MESSAGE_MAX_LENGTH = 100;
+const DRAW_MIN_SIZE = 1;
+const DRAW_MAX_SIZE = 80;
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -86,6 +88,56 @@ function validateChatMessage(message) {
   }
 
   return "";
+}
+
+function isValidDrawCoordinate(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validateDrawStroke(stroke, socket) {
+  if (!stroke || typeof stroke !== "object") {
+    return "\u7ed8\u753b\u6570\u636e\u65e0\u6548";
+  }
+
+  if (stroke.roomId !== socket.data.roomId) {
+    return "\u7ed8\u753b\u623f\u95f4\u4e0d\u5339\u914d";
+  }
+
+  if (!["brush", "eraser"].includes(stroke.tool)) {
+    return "\u7ed8\u753b\u5de5\u5177\u65e0\u6548";
+  }
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(stroke.color)) {
+    return "\u753b\u7b14\u989c\u8272\u65e0\u6548";
+  }
+
+  if (!Number.isFinite(stroke.size) || stroke.size < DRAW_MIN_SIZE || stroke.size > DRAW_MAX_SIZE) {
+    return "\u753b\u7b14\u7c97\u7ec6\u65e0\u6548";
+  }
+
+  if (
+    !isValidDrawCoordinate(stroke.fromX) ||
+    !isValidDrawCoordinate(stroke.fromY) ||
+    !isValidDrawCoordinate(stroke.toX) ||
+    !isValidDrawCoordinate(stroke.toY)
+  ) {
+    return "\u7ed8\u753b\u5750\u6807\u65e0\u6548";
+  }
+
+  return "";
+}
+
+function buildDrawStroke(stroke, socket) {
+  return {
+    roomId: socket.data.roomId,
+    fromX: stroke.fromX,
+    fromY: stroke.fromY,
+    toX: stroke.toX,
+    toY: stroke.toY,
+    color: stroke.color,
+    size: stroke.size,
+    tool: stroke.tool,
+  };
 }
 
 function getRoomPlayers(room) {
@@ -252,6 +304,7 @@ io.on("connection", (socket) => {
     rooms.set(roomId, {
       ownerPlayerId,
       maxPlayers: MAX_PLAYERS,
+      drawHistory: [],
       players: new Map(),
     });
 
@@ -275,6 +328,7 @@ io.on("connection", (socket) => {
       ok: true,
       room: buildRoomState(roomId),
       player,
+      drawHistory: rooms.get(roomId).drawHistory,
     });
 
     emitRoomUpdate(roomId);
@@ -311,6 +365,7 @@ io.on("connection", (socket) => {
       ok: true,
       room: buildRoomState(normalizedRoomId),
       player,
+      drawHistory: room.drawHistory,
     });
 
     emitSystemMessage(normalizedRoomId, `${player.nickname} \u52a0\u5165\u623f\u95f4`);
@@ -372,6 +427,35 @@ io.on("connection", (socket) => {
     emitRoomUpdate(roomId);
 
     callback?.({ ok: true, room: buildRoomState(roomId) });
+  });
+
+  socket.on("draw", (stroke) => {
+    const { roomId } = socket.data;
+
+    if (!roomId || !rooms.has(roomId) || !getCurrentPlayer(socket)) {
+      return;
+    }
+
+    const strokeError = validateDrawStroke(stroke, socket);
+
+    if (strokeError) {
+      return;
+    }
+
+    const drawStroke = buildDrawStroke(stroke, socket);
+    rooms.get(roomId).drawHistory.push(drawStroke);
+    socket.to(roomId).emit("draw", drawStroke);
+  });
+
+  socket.on("draw:clear", ({ roomId } = {}, callback) => {
+    if (!roomId || roomId !== socket.data.roomId || !rooms.has(roomId) || !getCurrentPlayer(socket)) {
+      callback?.({ ok: false, message: "\u4f60\u5df2\u4e0d\u5728\u623f\u95f4\u4e2d" });
+      return;
+    }
+
+    rooms.get(roomId).drawHistory = [];
+    socket.to(roomId).emit("draw:clear", { roomId });
+    callback?.({ ok: true });
   });
 
   socket.on("room:leave", (callback) => {
