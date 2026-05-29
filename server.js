@@ -19,6 +19,7 @@ const MAX_ROUND_SECONDS = 180;
 const DEFAULT_ROUND_SECONDS = 60;
 const ALLOWED_DRAW_TIMES = [1, 2];
 const DEFAULT_DRAW_TIMES_PER_PLAYER = 1;
+const DRAW_STROKE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 const WORDS = [
   "苹果",
   "自行车",
@@ -306,6 +307,10 @@ function validateDrawStroke(stroke, socket) {
     return "\u7ed8\u753b\u5de5\u5177\u65e0\u6548";
   }
 
+  if (typeof stroke.strokeId !== "string" || !DRAW_STROKE_ID_PATTERN.test(stroke.strokeId)) {
+    return "\u7ed8\u753b\u7b14\u753b\u65e0\u6548";
+  }
+
   if (!/^#[0-9a-fA-F]{6}$/.test(stroke.color)) {
     return "\u753b\u7b14\u989c\u8272\u65e0\u6548";
   }
@@ -329,6 +334,8 @@ function validateDrawStroke(stroke, socket) {
 function buildDrawStroke(stroke, socket) {
   return {
     roomId: socket.data.roomId,
+    playerId: socket.data.playerId,
+    strokeId: stroke.strokeId,
     fromX: stroke.fromX,
     fromY: stroke.fromY,
     toX: stroke.toX,
@@ -337,6 +344,24 @@ function buildDrawStroke(stroke, socket) {
     size: stroke.size,
     tool: stroke.tool,
   };
+}
+
+function getLastUndoableStrokeId(room, playerId) {
+  for (let index = room.drawHistory.length - 1; index >= 0; index -= 1) {
+    const stroke = room.drawHistory[index];
+
+    if (stroke.playerId === playerId && stroke.strokeId) {
+      return stroke.strokeId;
+    }
+  }
+
+  return "";
+}
+
+function removeStrokeFromHistory(room, strokeId, playerId) {
+  const beforeLength = room.drawHistory.length;
+  room.drawHistory = room.drawHistory.filter((stroke) => stroke.strokeId !== strokeId || stroke.playerId !== playerId);
+  return beforeLength !== room.drawHistory.length;
 }
 
 function getRoomPlayers(room) {
@@ -1031,6 +1056,35 @@ io.on("connection", (socket) => {
     const drawStroke = buildDrawStroke(stroke, socket);
     rooms.get(roomId).drawHistory.push(drawStroke);
     socket.to(roomId).emit("draw", drawStroke);
+  });
+
+  socket.on("draw:undo", ({ roomId } = {}, callback) => {
+    if (!roomId || roomId !== socket.data.roomId || !rooms.has(roomId) || !getCurrentPlayer(socket)) {
+      callback?.({ ok: false, message: "\u4f60\u5df2\u4e0d\u5728\u623f\u95f4\u4e2d" });
+      return;
+    }
+
+    const room = rooms.get(roomId);
+    const player = getCurrentPlayer(socket);
+
+    if (room.game.status === "playing" && room.game.currentDrawerId !== player.playerId) {
+      callback?.({ ok: false, message: "\u53ea\u6709\u5f53\u524d\u753b\u624b\u53ef\u4ee5\u64a4\u56de\u7b14\u753b" });
+      return;
+    }
+
+    const strokeId = getLastUndoableStrokeId(room, player.playerId);
+
+    if (!strokeId || !removeStrokeFromHistory(room, strokeId, player.playerId)) {
+      callback?.({ ok: false, message: "\u6ca1\u6709\u53ef\u4ee5\u64a4\u56de\u7684\u7b14\u753b" });
+      return;
+    }
+
+    io.to(roomId).emit("draw:history", {
+      roomId,
+      history: room.drawHistory,
+    });
+
+    callback?.({ ok: true });
   });
 
   socket.on("draw:clear", ({ roomId } = {}, callback) => {

@@ -37,6 +37,7 @@ const brushColorInput = document.getElementById("brushColorInput");
 const colorPresetButtons = Array.from(document.querySelectorAll(".color-swatch"));
 const brushSizeInput = document.getElementById("brushSizeInput");
 const brushSizeText = document.getElementById("brushSizeText");
+const undoCanvasButton = document.getElementById("undoCanvasButton");
 const clearCanvasButton = document.getElementById("clearCanvasButton");
 const startGameButton = document.getElementById("startGameButton");
 const gameStatusText = document.getElementById("gameStatusText");
@@ -61,6 +62,7 @@ let activePointerId = null;
 let lastPoint = null;
 let lastSyncedPoint = null;
 let activeDrawStyle = null;
+let activeStrokeId = "";
 let pendingSyncPoint = null;
 let pendingSyncStyle = null;
 let drawSyncTimer = null;
@@ -101,6 +103,7 @@ function setDrawingEnabled(enabled) {
   eraserToolButton.disabled = !enabled;
   brushColorInput.disabled = !enabled;
   brushSizeInput.disabled = !enabled;
+  undoCanvasButton.disabled = !enabled;
   clearCanvasButton.disabled = !enabled;
   colorPresetButtons.forEach((button) => {
     button.disabled = !enabled;
@@ -222,6 +225,14 @@ function clearChatMessages() {
   chatInput.value = "";
 }
 
+function createStrokeId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function appendChatMessage(message) {
   const item = document.createElement("div");
   const time = formatMessageTime(message.time);
@@ -268,6 +279,7 @@ function resetActiveDrawing() {
   lastPoint = null;
   lastSyncedPoint = null;
   activeDrawStyle = null;
+  activeStrokeId = "";
 }
 
 function scheduleDrawingCanvasResize() {
@@ -443,6 +455,7 @@ function createDrawStroke(fromPoint, toPoint, style) {
 
   return {
     roomId: currentRoomId,
+    strokeId: activeStrokeId,
     fromX: from.x,
     fromY: from.y,
     toX: to.x,
@@ -456,6 +469,10 @@ function createDrawStroke(fromPoint, toPoint, style) {
 function emitDrawStroke(fromPoint, toPoint, style) {
   if (!currentRoomId) {
     return;
+  }
+
+  if (!activeStrokeId) {
+    activeStrokeId = createStrokeId();
   }
 
   socket.emit("draw", createDrawStroke(fromPoint, toPoint, style));
@@ -536,6 +553,7 @@ function beginDrawing(event) {
   isDrawing = true;
   activePointerId = event.pointerId;
   activeDrawStyle = getCurrentDrawStyle();
+  activeStrokeId = createStrokeId();
   lastPoint = getCanvasPoint(event);
   lastSyncedPoint = lastPoint;
   drawingCanvas.setPointerCapture(event.pointerId);
@@ -567,6 +585,7 @@ function endDrawing(event) {
   lastPoint = null;
   lastSyncedPoint = null;
   activeDrawStyle = null;
+  activeStrokeId = "";
 
   if (drawingCanvas.hasPointerCapture(event.pointerId)) {
     drawingCanvas.releasePointerCapture(event.pointerId);
@@ -606,6 +625,7 @@ function initializeDrawingBoard() {
     lastPoint = null;
     lastSyncedPoint = null;
     activeDrawStyle = null;
+    activeStrokeId = "";
   });
 
   brushToolButton.addEventListener("click", () => setDrawingTool("brush"));
@@ -622,12 +642,34 @@ function initializeDrawingBoard() {
   brushSizeInput.addEventListener("input", () => {
     brushSizeText.textContent = brushSizeInput.value;
   });
+  undoCanvasButton.addEventListener("click", () => {
+    if (!canDrawOnCanvas) {
+      showNotice("\u53ea\u6709\u5f53\u524d\u753b\u624b\u53ef\u4ee5\u64a4\u56de\u7b14\u753b");
+      return;
+    }
+
+    if (!currentRoomId) {
+      return;
+    }
+
+    resetActiveDrawing();
+    undoCanvasButton.disabled = true;
+
+    socket.emit("draw:undo", { roomId: currentRoomId }, (response) => {
+      undoCanvasButton.disabled = !canDrawOnCanvas;
+
+      if (!response?.ok) {
+        showNotice(response?.message || "\u64a4\u56de\u5931\u8d25");
+      }
+    });
+  });
   clearCanvasButton.addEventListener("click", () => {
     if (!canDrawOnCanvas) {
       showNotice("\u53ea\u6709\u5f53\u524d\u753b\u624b\u53ef\u4ee5\u64cd\u4f5c\u753b\u677f");
       return;
     }
 
+    resetActiveDrawing();
     clearDrawingCanvas();
 
     if (currentRoomId) {
@@ -1090,8 +1132,16 @@ socket.on("draw", (stroke) => {
   renderRemoteDrawStroke(stroke);
 });
 
+socket.on("draw:history", ({ roomId, history } = {}) => {
+  if (roomId === currentRoomId) {
+    resetActiveDrawing();
+    replayDrawingHistory(history || []);
+  }
+});
+
 socket.on("draw:clear", ({ roomId } = {}) => {
   if (roomId === currentRoomId) {
+    resetActiveDrawing();
     clearDrawingCanvas();
   }
 });

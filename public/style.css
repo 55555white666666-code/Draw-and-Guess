@@ -450,6 +450,14 @@ h2 {
   min-width: 0;
 }
 
+.drawing-tools .secondary-button,
+.drawing-tools .danger-button {
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  overflow-wrap: anywhere;
+}
+
 .tool-group {
   display: grid;
   grid-template-columns: repeat(2, minmax(84px, 1fr));
@@ -570,7 +578,6 @@ h2 {
 
 #drawingCanvas.drawing-disabled {
   cursor: not-allowed;
-  opacity: 0.72;
 }
 
 .chat-card {
@@ -770,6 +777,7 @@ h2 {
   }
 
   .tool-button,
+  .drawing-tools .secondary-button,
   .drawing-tools .danger-button {
     width: 100%;
     min-width: 0;
@@ -789,8 +797,9 @@ h2 {
     grid-column: span 2;
   }
 
-  .drawing-tools .danger-button {
-    grid-column: span 2;
+  #undoCanvasButton,
+  #clearCanvasButton {
+    grid-column: span 1;
   }
 
   .tool-control {
@@ -898,6 +907,7 @@ h2 {
     grid-column: span 2;
   }
 
+  .drawing-tools .secondary-button,
   .drawing-tools .danger-button {
     width: 100%;
     min-width: 0;
