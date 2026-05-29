@@ -26,6 +26,7 @@ const chatInput = document.getElementById("chatInput");
 const sendChatButton = document.getElementById("sendChatButton");
 const chatError = document.getElementById("chatError");
 const drawingCanvas = document.getElementById("drawingCanvas");
+const canvasWrap = drawingCanvas.parentElement;
 const brushToolButton = document.getElementById("brushToolButton");
 const eraserToolButton = document.getElementById("eraserToolButton");
 const brushColorInput = document.getElementById("brushColorInput");
@@ -33,10 +34,20 @@ const colorPresetButtons = Array.from(document.querySelectorAll(".color-swatch")
 const brushSizeInput = document.getElementById("brushSizeInput");
 const brushSizeText = document.getElementById("brushSizeText");
 const clearCanvasButton = document.getElementById("clearCanvasButton");
+const startGameButton = document.getElementById("startGameButton");
+const gameStatusText = document.getElementById("gameStatusText");
+const currentDrawerText = document.getElementById("currentDrawerText");
+const wordPanel = document.getElementById("wordPanel");
+const wordLabel = document.getElementById("wordLabel");
+const wordText = document.getElementById("wordText");
+const leaderboardList = document.getElementById("leaderboardList");
+const drawingRoleText = document.getElementById("drawingRoleText");
 
 let currentPlayerId = "";
 let currentRoomId = "";
 let currentRoom = null;
+let currentGameState = null;
+let canDrawOnCanvas = true;
 let drawingContext = null;
 let drawingTool = "brush";
 let isDrawing = false;
@@ -50,6 +61,7 @@ let drawSyncTimer = null;
 let lastDrawSentAt = 0;
 let canvasPixelRatio = 1;
 let canvasResizeObserver = null;
+let canvasResizeFrame = 0;
 const chatMessageMaxLength = 100;
 const drawSendIntervalMs = 25;
 
@@ -72,6 +84,19 @@ function showNotice(message) {
 
 function showChatError(message) {
   chatError.textContent = message;
+}
+
+function setDrawingEnabled(enabled) {
+  canDrawOnCanvas = enabled;
+  drawingCanvas.classList.toggle("drawing-disabled", !enabled);
+  brushToolButton.disabled = !enabled;
+  eraserToolButton.disabled = !enabled;
+  brushColorInput.disabled = !enabled;
+  brushSizeInput.disabled = !enabled;
+  clearCanvasButton.disabled = !enabled;
+  colorPresetButtons.forEach((button) => {
+    button.disabled = !enabled;
+  });
 }
 
 function getNickname() {
@@ -195,6 +220,31 @@ function getCanvasContext() {
   }
 
   return drawingContext;
+}
+
+function resetActiveDrawing() {
+  flushPendingDrawStroke();
+  isDrawing = false;
+
+  if (activePointerId !== null && drawingCanvas.hasPointerCapture(activePointerId)) {
+    drawingCanvas.releasePointerCapture(activePointerId);
+  }
+
+  activePointerId = null;
+  lastPoint = null;
+  lastSyncedPoint = null;
+  activeDrawStyle = null;
+}
+
+function scheduleDrawingCanvasResize() {
+  if (canvasResizeFrame) {
+    cancelAnimationFrame(canvasResizeFrame);
+  }
+
+  canvasResizeFrame = requestAnimationFrame(() => {
+    canvasResizeFrame = 0;
+    resizeDrawingCanvas();
+  });
 }
 
 function resizeDrawingCanvas() {
@@ -438,6 +488,10 @@ function replayDrawingHistory(history = []) {
 }
 
 function beginDrawing(event) {
+  if (!canDrawOnCanvas) {
+    return;
+  }
+
   if (event.button !== undefined && event.button !== 0) {
     return;
   }
@@ -535,17 +589,31 @@ function initializeDrawingBoard() {
     brushSizeText.textContent = brushSizeInput.value;
   });
   clearCanvasButton.addEventListener("click", () => {
+    if (!canDrawOnCanvas) {
+      showNotice("\u53ea\u6709\u5f53\u524d\u753b\u624b\u53ef\u4ee5\u64cd\u4f5c\u753b\u677f");
+      return;
+    }
+
     clearDrawingCanvas();
 
     if (currentRoomId) {
       socket.emit("draw:clear", { roomId: currentRoomId });
     }
   });
-  window.addEventListener("resize", resizeDrawingCanvas);
-
   if ("ResizeObserver" in window) {
-    canvasResizeObserver = new ResizeObserver(() => resizeDrawingCanvas());
-    canvasResizeObserver.observe(drawingCanvas);
+    canvasResizeObserver = new ResizeObserver(() => scheduleDrawingCanvasResize());
+    canvasResizeObserver.observe(canvasWrap || drawingCanvas);
+  }
+
+  window.addEventListener("resize", scheduleDrawingCanvasResize);
+  window.addEventListener("orientationchange", () => {
+    resetActiveDrawing();
+    scheduleDrawingCanvasResize();
+    window.setTimeout(scheduleDrawingCanvasResize, 250);
+  });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", scheduleDrawingCanvasResize);
   }
 }
 
@@ -598,11 +666,69 @@ function renderRoom(room) {
   renderPlayers(room);
 }
 
-function showRoom(room, player, drawHistory = []) {
+function renderLeaderboard(items = []) {
+  leaderboardList.innerHTML = "";
+
+  items.forEach((player, index) => {
+    const item = document.createElement("li");
+    item.textContent = `${index + 1}. ${player.nickname} - ${player.score} \u5206`;
+    leaderboardList.appendChild(item);
+  });
+}
+
+function renderGameState(gameState) {
+  currentGameState = gameState;
+
+  if (!gameState) {
+    roomView.classList.remove("is-drawer", "is-guesser");
+    startGameButton.disabled = false;
+    startGameButton.classList.remove("hidden");
+    gameStatusText.textContent = "\u7b49\u5f85\u623f\u4e3b\u5f00\u59cb\u6e38\u620f";
+    currentDrawerText.textContent = "";
+    wordPanel.classList.add("hidden");
+    wordText.textContent = "";
+    drawingRoleText.textContent = "\u7b49\u5f85\u5f00\u59cb";
+    leaderboardList.innerHTML = "";
+    leaderboardList.classList.add("hidden");
+    setDrawingEnabled(true);
+    scheduleDrawingCanvasResize();
+    return;
+  }
+
+  const isPlaying = gameState.status === "playing";
+  const isEnded = gameState.status === "ended";
+  const isDrawer = Boolean(gameState.isDrawer);
+
+  roomView.classList.toggle("is-drawer", isPlaying && isDrawer);
+  roomView.classList.toggle("is-guesser", isPlaying && !isDrawer);
+  startGameButton.disabled = !gameState.canStart;
+  startGameButton.classList.toggle("hidden", !gameState.isOwner);
+  gameStatusText.textContent = gameState.message || "\u7b49\u5f85\u5f00\u59cb\u6e38\u620f";
+  currentDrawerText.textContent = isPlaying
+    ? `\u7b2c ${gameState.roundNumber}/${gameState.totalRounds} \u8f6e\uff0c\u753b\u624b\uff1a${gameState.currentDrawerNickname}`
+    : "";
+
+  wordPanel.classList.toggle("hidden", !isPlaying);
+  wordLabel.textContent = isDrawer ? "\u4f60\u7684\u9898\u76ee" : "\u63d0\u793a";
+  wordText.textContent = isDrawer ? gameState.word : "\u7b49\u5f85\u753b\u624b\u4f5c\u753b";
+  drawingRoleText.textContent = isPlaying
+    ? isDrawer
+      ? "\u4f60\u662f\u753b\u624b"
+      : "\u4f60\u662f\u731c\u8bcd\u8005"
+    : "\u7b49\u5f85\u5f00\u59cb";
+
+  setDrawingEnabled(!isPlaying || isDrawer);
+  renderLeaderboard(isEnded ? gameState.leaderboard : gameState.scores);
+  leaderboardList.classList.toggle("hidden", !isEnded);
+  scheduleDrawingCanvasResize();
+}
+
+function showRoom(room, player, drawHistory = [], gameState = null) {
   currentPlayerId = player.playerId;
   playerIdText.textContent = player.playerId;
   clearChatMessages();
   renderRoom(room);
+  renderGameState(gameState);
 
   homeView.classList.add("hidden");
   roomView.classList.remove("hidden");
@@ -617,8 +743,10 @@ function showHome() {
   currentPlayerId = "";
   currentRoomId = "";
   currentRoom = null;
+  currentGameState = null;
   playerIdText.textContent = "";
   playerList.innerHTML = "";
+  renderGameState(null);
   clearChatMessages();
   roomView.classList.add("hidden");
   homeView.classList.remove("hidden");
@@ -644,7 +772,7 @@ function handleRoomResponse(response, fallbackMessage) {
     return;
   }
 
-  showRoom(response.room, response.player, response.drawHistory || []);
+  showRoom(response.room, response.player, response.drawHistory || [], response.gameState || null);
 }
 
 initializeDrawingBoard();
@@ -762,6 +890,17 @@ updateMaxPlayersButton.addEventListener("click", () => {
   });
 });
 
+startGameButton.addEventListener("click", () => {
+  startGameButton.disabled = true;
+
+  socket.emit("game:start", (response) => {
+    if (!response?.ok) {
+      showNotice(response?.message || "\u5f00\u59cb\u6e38\u620f\u5931\u8d25");
+      startGameButton.disabled = currentGameState ? !currentGameState.canStart : false;
+    }
+  });
+});
+
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
 
@@ -818,6 +957,10 @@ socket.on("room:update", (room) => {
 
 socket.on("chat:message", (message) => {
   appendChatMessage(message);
+});
+
+socket.on("game:state", (gameState) => {
+  renderGameState(gameState);
 });
 
 socket.on("draw", (stroke) => {

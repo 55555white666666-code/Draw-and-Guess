@@ -14,6 +14,28 @@ const MAX_PLAYERS = 8;
 const CHAT_MESSAGE_MAX_LENGTH = 100;
 const DRAW_MIN_SIZE = 1;
 const DRAW_MAX_SIZE = 80;
+const WORDS = [
+  "\u82f9\u679c",
+  "\u81ea\u884c\u8f66",
+  "\u5927\u6811",
+  "\u706b\u7bad",
+  "\u732b",
+  "\u96e8\u4f1e",
+  "\u7535\u8111",
+  "\u86cb\u7cd5",
+  "\u592a\u9633",
+  "\u6708\u4eae",
+  "\u98de\u673a",
+  "\u623f\u5b50",
+  "\u897f\u74dc",
+  "\u9c7c",
+  "\u624b\u673a",
+  "\u661f\u661f",
+  "\u94a5\u5319",
+  "\u773c\u955c",
+  "\u96ea\u4eba",
+  "\u6c7d\u8f66",
+];
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -34,6 +56,35 @@ function createRoomId() {
   } while (rooms.has(roomId));
 
   return roomId;
+}
+
+function createGameState() {
+  return {
+    status: "waiting",
+    drawOrder: [],
+    currentRoundIndex: -1,
+    currentDrawerId: "",
+    currentWord: "",
+    scores: {},
+    guessedPlayerIds: new Set(),
+    leaderboard: [],
+    message: "\u7b49\u5f85\u5f00\u59cb\u6e38\u620f",
+  };
+}
+
+function shuffleItems(items) {
+  const shuffled = [...items];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
+function chooseWord() {
+  return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
 function validateNickname(nickname) {
@@ -173,9 +224,61 @@ function buildRoomState(roomId) {
   };
 }
 
+function getScoreList(room) {
+  return getRoomPlayers(room)
+    .map((player) => ({
+      playerId: player.playerId,
+      nickname: player.nickname,
+      score: room.game.scores[player.playerId] || 0,
+    }))
+    .sort((left, right) => right.score - left.score || left.nickname.localeCompare(right.nickname));
+}
+
+function buildGameStateForPlayer(roomId, playerId) {
+  const room = rooms.get(roomId);
+  const { game } = room;
+  const currentDrawer = getRoomPlayers(room).find((player) => player.playerId === game.currentDrawerId);
+  const isDrawer = game.status === "playing" && game.currentDrawerId === playerId;
+
+  return {
+    status: game.status,
+    message: game.message,
+    isOwner: room.ownerPlayerId === playerId,
+    canStart: room.ownerPlayerId === playerId && getRoomPlayers(room).length >= MIN_PLAYERS && game.status !== "playing",
+    isDrawer,
+    currentDrawerId: game.currentDrawerId,
+    currentDrawerNickname: currentDrawer?.nickname || "",
+    word: isDrawer ? game.currentWord : "",
+    roundNumber: game.status === "playing" ? game.currentRoundIndex + 1 : 0,
+    totalRounds: game.drawOrder.length,
+    scores: getScoreList(room),
+    leaderboard: game.status === "ended" ? game.leaderboard : [],
+  };
+}
+
 function emitRoomUpdate(roomId) {
   if (rooms.has(roomId)) {
     io.to(roomId).emit("room:update", buildRoomState(roomId));
+  }
+}
+
+function emitGameState(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  room.players.forEach((player, socketId) => {
+    io.to(socketId).emit("game:state", buildGameStateForPlayer(roomId, player.playerId));
+  });
+}
+
+function emitGameStateToSocket(socket) {
+  const { roomId, playerId } = socket.data;
+
+  if (roomId && playerId && rooms.has(roomId)) {
+    socket.emit("game:state", buildGameStateForPlayer(roomId, playerId));
   }
 }
 
@@ -209,6 +312,110 @@ function emitPlayerMessage(roomId, player, content) {
   });
 }
 
+function finishGame(roomId, message = "\u672c\u5c40\u7ed3\u675f") {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+  room.game.status = "ended";
+  room.game.currentDrawerId = "";
+  room.game.currentWord = "";
+  room.game.guessedPlayerIds = new Set();
+  room.game.leaderboard = getScoreList(room);
+  room.game.message = message;
+  emitSystemMessage(roomId, message);
+  emitGameState(roomId);
+}
+
+function endGameForNotEnoughPlayers(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  finishGame(roomId, "\u4eba\u6570\u4e0d\u8db3\uff0c\u6e38\u620f\u5df2\u7ed3\u675f");
+}
+
+function startNextRound(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  if (getRoomPlayers(room).length < MIN_PLAYERS) {
+    endGameForNotEnoughPlayers(roomId);
+    return;
+  }
+
+  room.game.currentRoundIndex += 1;
+
+  while (
+    room.game.currentRoundIndex < room.game.drawOrder.length &&
+    !getRoomPlayers(room).some((player) => player.playerId === room.game.drawOrder[room.game.currentRoundIndex])
+  ) {
+    room.game.currentRoundIndex += 1;
+  }
+
+  if (room.game.currentRoundIndex >= room.game.drawOrder.length) {
+    finishGame(roomId, "\u6240\u6709\u73a9\u5bb6\u90fd\u5df2\u5b8c\u6210\u4e00\u6b21\u4f5c\u753b\uff0c\u6e38\u620f\u7ed3\u675f");
+    return;
+  }
+
+  room.game.status = "playing";
+  room.game.currentDrawerId = room.game.drawOrder[room.game.currentRoundIndex];
+  room.game.currentWord = chooseWord();
+  room.game.guessedPlayerIds = new Set();
+  room.game.message = "\u65b0\u4e00\u8f6e\u5f00\u59cb";
+  room.drawHistory = [];
+
+  const drawer = getRoomPlayers(room).find((player) => player.playerId === room.game.currentDrawerId);
+  io.to(roomId).emit("draw:clear", { roomId });
+  emitSystemMessage(roomId, `\u7b2c ${room.game.currentRoundIndex + 1} \u8f6e\u5f00\u59cb\uff0c${drawer.nickname} \u662f\u753b\u624b`);
+  emitGameState(roomId);
+}
+
+function startGame(roomId) {
+  const room = rooms.get(roomId);
+  const players = getRoomPlayers(room);
+
+  room.game = createGameState();
+  room.game.status = "playing";
+  room.game.drawOrder = shuffleItems(players.map((player) => player.playerId));
+  room.game.scores = Object.fromEntries(players.map((player) => [player.playerId, 0]));
+  room.game.message = "\u6e38\u620f\u5df2\u5f00\u59cb";
+  room.drawHistory = [];
+
+  emitSystemMessage(roomId, "\u6e38\u620f\u5f00\u59cb");
+  startNextRound(roomId);
+}
+
+function handlePlayerLeftGame(roomId, playerId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  if (room.game.status !== "playing") {
+    emitGameState(roomId);
+    return;
+  }
+
+  if (getRoomPlayers(room).length < MIN_PLAYERS) {
+    endGameForNotEnoughPlayers(roomId);
+    return;
+  }
+
+  if (room.game.currentDrawerId === playerId) {
+    emitSystemMessage(roomId, "\u5f53\u524d\u753b\u624b\u5df2\u79bb\u5f00\uff0c\u8fdb\u5165\u4e0b\u4e00\u8f6e");
+    startNextRound(roomId);
+    return;
+  }
+
+  emitGameState(roomId);
+}
+
 function leaveCurrentRoom(socket) {
   const { roomId, playerId } = socket.data;
 
@@ -234,6 +441,7 @@ function leaveCurrentRoom(socket) {
     }
 
     emitRoomUpdate(roomId);
+    handlePlayerLeftGame(roomId, playerId);
   }
 
   socket.data.roomId = "";
@@ -286,7 +494,32 @@ io.on("connection", (socket) => {
       return;
     }
 
-    emitPlayerMessage(roomId, player, message.trim());
+    const content = message.trim();
+    const room = rooms.get(roomId);
+    const { game } = room;
+
+    if (game.status === "playing" && player.playerId === game.currentDrawerId && content === game.currentWord) {
+      callback?.({ ok: false, message: "\u753b\u624b\u4e0d\u80fd\u53d1\u9001\u5f53\u524d\u7b54\u6848" });
+      return;
+    }
+
+    const isCorrectGuess =
+      game.status === "playing" &&
+      player.playerId !== game.currentDrawerId &&
+      !game.guessedPlayerIds.has(player.playerId) &&
+      content === game.currentWord;
+
+    if (isCorrectGuess) {
+      game.scores[player.playerId] = (game.scores[player.playerId] || 0) + 1;
+      game.scores[game.currentDrawerId] = (game.scores[game.currentDrawerId] || 0) + 1;
+      game.guessedPlayerIds.add(player.playerId);
+      emitSystemMessage(roomId, `${player.nickname} \u731c\u4e2d\u4e86\uff01\u7b54\u6848\u662f\uff1a${game.currentWord}`);
+      startNextRound(roomId);
+      callback?.({ ok: true, guessed: true });
+      return;
+    }
+
+    emitPlayerMessage(roomId, player, content);
     callback?.({ ok: true });
   });
 
@@ -305,6 +538,7 @@ io.on("connection", (socket) => {
       ownerPlayerId,
       maxPlayers: MAX_PLAYERS,
       drawHistory: [],
+      game: createGameState(),
       players: new Map(),
     });
 
@@ -329,9 +563,11 @@ io.on("connection", (socket) => {
       room: buildRoomState(roomId),
       player,
       drawHistory: rooms.get(roomId).drawHistory,
+      gameState: buildGameStateForPlayer(roomId, player.playerId),
     });
 
     emitRoomUpdate(roomId);
+    emitGameState(roomId);
     emitSystemMessage(roomId, `${player.nickname} \u521b\u5efa\u5e76\u8fdb\u5165\u623f\u95f4`);
   });
 
@@ -359,6 +595,7 @@ io.on("connection", (socket) => {
     }
 
     const player = enterRoom(socket, normalizedRoomId, nickname);
+    room.game.scores[player.playerId] = room.game.scores[player.playerId] || 0;
     console.log(`Room joined: ${normalizedRoomId} by ${player.nickname} (${player.playerId})`);
 
     callback?.({
@@ -366,9 +603,11 @@ io.on("connection", (socket) => {
       room: buildRoomState(normalizedRoomId),
       player,
       drawHistory: room.drawHistory,
+      gameState: buildGameStateForPlayer(normalizedRoomId, player.playerId),
     });
 
     emitSystemMessage(normalizedRoomId, `${player.nickname} \u52a0\u5165\u623f\u95f4`);
+    emitGameState(normalizedRoomId);
   });
 
   socket.on("player:updateNickname", ({ nickname } = {}, callback) => {
@@ -397,6 +636,7 @@ io.on("connection", (socket) => {
     socket.data.nickname = player.nickname;
     emitRoomUpdate(roomId);
     emitSystemMessage(roomId, `${previousNickname} \u5c06\u6635\u79f0\u4fee\u6539\u4e3a ${player.nickname}`);
+    emitGameState(roomId);
 
     callback?.({ ok: true, player, room: buildRoomState(roomId) });
   });
@@ -429,10 +669,55 @@ io.on("connection", (socket) => {
     callback?.({ ok: true, room: buildRoomState(roomId) });
   });
 
+  socket.on("game:start", (callback) => {
+    const { roomId, playerId } = socket.data;
+
+    if (!roomId || !rooms.has(roomId)) {
+      callback?.({ ok: false, message: "\u4f60\u5df2\u4e0d\u5728\u623f\u95f4\u4e2d" });
+      return;
+    }
+
+    const room = rooms.get(roomId);
+
+    if (room.ownerPlayerId !== playerId) {
+      callback?.({ ok: false, message: "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u5f00\u59cb\u6e38\u620f" });
+      return;
+    }
+
+    if (getRoomPlayers(room).length < MIN_PLAYERS) {
+      callback?.({ ok: false, message: "\u81f3\u5c11 2 \u4eba\u624d\u80fd\u5f00\u59cb\u6e38\u620f" });
+      return;
+    }
+
+    if (getRoomPlayers(room).length > MAX_PLAYERS) {
+      callback?.({ ok: false, message: "\u6bcf\u5c40\u6700\u591a 8 \u4eba" });
+      return;
+    }
+
+    if (room.game.status === "playing") {
+      callback?.({ ok: false, message: "\u6e38\u620f\u5df2\u7ecf\u5f00\u59cb" });
+      return;
+    }
+
+    startGame(roomId);
+    callback?.({ ok: true });
+  });
+
   socket.on("draw", (stroke) => {
     const { roomId } = socket.data;
 
-    if (!roomId || !rooms.has(roomId) || !getCurrentPlayer(socket)) {
+    if (!roomId || !rooms.has(roomId)) {
+      return;
+    }
+
+    const player = getCurrentPlayer(socket);
+    const room = rooms.get(roomId);
+
+    if (!player) {
+      return;
+    }
+
+    if (room.game.status === "playing" && room.game.currentDrawerId !== player.playerId) {
       return;
     }
 
@@ -450,6 +735,14 @@ io.on("connection", (socket) => {
   socket.on("draw:clear", ({ roomId } = {}, callback) => {
     if (!roomId || roomId !== socket.data.roomId || !rooms.has(roomId) || !getCurrentPlayer(socket)) {
       callback?.({ ok: false, message: "\u4f60\u5df2\u4e0d\u5728\u623f\u95f4\u4e2d" });
+      return;
+    }
+
+    const room = rooms.get(roomId);
+    const player = getCurrentPlayer(socket);
+
+    if (room.game.status === "playing" && room.game.currentDrawerId !== player.playerId) {
+      callback?.({ ok: false, message: "\u53ea\u6709\u5f53\u524d\u753b\u624b\u53ef\u4ee5\u6e05\u7a7a\u753b\u677f" });
       return;
     }
 

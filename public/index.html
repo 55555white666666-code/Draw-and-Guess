@@ -69,7 +69,16 @@
           </div>
           <div class="room-card waiting-card">
             <h2>&#31561;&#24453;&#24320;&#22987;</h2>
-            <p class="muted">&#24403;&#21069;&#21482;&#23454;&#29616;&#25151;&#38388;&#22823;&#21381;&#21151;&#33021;&#65292;&#26242;&#19981;&#21152;&#20837;&#30011;&#26495;&#21644;&#28216;&#25103;&#24320;&#22987;&#21151;&#33021;&#12290;</p>
+            <div class="game-panel">
+              <button class="primary-button" id="startGameButton" type="button">&#24320;&#22987;&#28216;&#25103;</button>
+              <p class="game-status" id="gameStatusText">&#31561;&#24453;&#25151;&#20027;&#24320;&#22987;&#28216;&#25103;</p>
+              <p class="muted small-text" id="currentDrawerText"></p>
+              <div class="word-panel hidden" id="wordPanel">
+                <span id="wordLabel">&#24403;&#21069;&#25552;&#31034;</span>
+                <strong id="wordText"></strong>
+              </div>
+              <ol class="leaderboard hidden" id="leaderboardList"></ol>
+            </div>
             <div class="room-settings">
               <label for="maxPlayersInput">&#25151;&#38388;&#20154;&#25968;&#19978;&#38480;</label>
               <div class="limit-row">
@@ -82,7 +91,7 @@
           <div class="room-card drawing-card">
             <div class="card-heading">
               <h2>&#26412;&#22320;&#30011;&#26495;</h2>
-              <span>&#26242;&#19981;&#21516;&#27493;</span>
+              <span id="drawingRoleText">&#31561;&#24453;&#24320;&#22987;</span>
             </div>
             <div class="drawing-tools" aria-label="&#30011;&#26495;&#24037;&#20855;">
               <div class="tool-group">
