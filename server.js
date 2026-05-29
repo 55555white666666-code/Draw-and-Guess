@@ -14,27 +14,133 @@ const MAX_PLAYERS = 8;
 const CHAT_MESSAGE_MAX_LENGTH = 100;
 const DRAW_MIN_SIZE = 1;
 const DRAW_MAX_SIZE = 80;
+const MIN_ROUND_SECONDS = 30;
+const MAX_ROUND_SECONDS = 180;
+const DEFAULT_ROUND_SECONDS = 60;
+const ALLOWED_DRAW_TIMES = [1, 2];
+const DEFAULT_DRAW_TIMES_PER_PLAYER = 1;
 const WORDS = [
-  "\u82f9\u679c",
-  "\u81ea\u884c\u8f66",
-  "\u5927\u6811",
-  "\u706b\u7bad",
-  "\u732b",
-  "\u96e8\u4f1e",
-  "\u7535\u8111",
-  "\u86cb\u7cd5",
-  "\u592a\u9633",
-  "\u6708\u4eae",
-  "\u98de\u673a",
-  "\u623f\u5b50",
-  "\u897f\u74dc",
-  "\u9c7c",
-  "\u624b\u673a",
-  "\u661f\u661f",
-  "\u94a5\u5319",
-  "\u773c\u955c",
-  "\u96ea\u4eba",
-  "\u6c7d\u8f66",
+  "苹果",
+  "自行车",
+  "大树",
+  "火箭",
+  "猫",
+  "雨伞",
+  "电脑",
+  "蛋糕",
+  "太阳",
+  "月亮",
+  "飞机",
+  "房子",
+  "西瓜",
+  "鱼",
+  "手机",
+  "星星",
+  "钥匙",
+  "眼镜",
+  "雪人",
+  "汽车",
+  "香蕉",
+  "草莓",
+  "葡萄",
+  "云朵",
+  "小狗",
+  "小猫",
+  "兔子",
+  "熊猫",
+  "小鸟",
+  "乌龟",
+  "蝴蝶",
+  "鸭子",
+  "大象",
+  "杯子",
+  "椅子",
+  "桌子",
+  "书包",
+  "电视",
+  "相机",
+  "耳机",
+  "手表",
+  "火车",
+  "冰淇淋",
+  "汉堡",
+  "薯条",
+  "披萨",
+  "篮球",
+  "足球",
+  "羽毛球",
+  "乒乓球",
+  "滑板",
+  "游泳",
+  "跑步",
+  "跳舞",
+  "唱歌",
+  "画画",
+  "医生",
+  "老师",
+  "警察",
+  "厨师",
+  "消防员",
+  "超市",
+  "学校",
+  "医院",
+  "电影院",
+  "游乐园",
+  "电梯",
+  "红绿灯",
+  "斑马线",
+  "公交车",
+  "地铁",
+  "生日蛋糕",
+  "圣诞树",
+  "红包",
+  "灯笼",
+  "风筝",
+  "牙刷",
+  "拖鞋",
+  "枕头",
+  "镜子",
+  "闹钟",
+  "奶茶",
+  "火锅",
+  "饺子",
+  "泡面",
+  "糖葫芦",
+  "外卖员",
+  "程序员",
+  "摄影师",
+  "宇航员",
+  "魔术师",
+  "潜水艇",
+  "热气球",
+  "摩天轮",
+  "过山车",
+  "旋转木马",
+  "显微镜",
+  "望远镜",
+  "打印机",
+  "充电宝",
+  "无人机",
+  "龙卷风",
+  "火山爆发",
+  "彩虹",
+  "海啸",
+  "沙漠",
+  "剪刀石头布",
+  "捉迷藏",
+  "拔河",
+  "跳绳",
+  "打喷嚏",
+  "熬夜",
+  "迟到",
+  "考试",
+  "加班",
+  "放假",
+  "吃瓜群众",
+  "社恐",
+  "破防",
+  "emo",
+  "点赞",
 ];
 const rooms = new Map();
 
@@ -69,6 +175,16 @@ function createGameState() {
     guessedPlayerIds: new Set(),
     leaderboard: [],
     message: "\u7b49\u5f85\u5f00\u59cb\u6e38\u620f",
+    remainingSeconds: 0,
+    roundEndsAt: 0,
+    roundTimerId: null,
+  };
+}
+
+function createDefaultSettings() {
+  return {
+    roundSeconds: DEFAULT_ROUND_SECONDS,
+    drawTimesPerPlayer: DEFAULT_DRAW_TIMES_PER_PLAYER,
   };
 }
 
@@ -127,6 +243,38 @@ function validateMaxPlayers(maxPlayers, currentPlayers = MIN_PLAYERS) {
   }
 
   return "";
+}
+
+function validateRoundSeconds(roundSeconds) {
+  const parsedRoundSeconds = Number(roundSeconds);
+
+  if (!Number.isInteger(parsedRoundSeconds)) {
+    return "\u6bcf\u8f6e\u65f6\u95f4\u5fc5\u987b\u662f\u6574\u6570";
+  }
+
+  if (parsedRoundSeconds < MIN_ROUND_SECONDS || parsedRoundSeconds > MAX_ROUND_SECONDS) {
+    return `\u6bcf\u8f6e\u65f6\u95f4\u5fc5\u987b\u5728 ${MIN_ROUND_SECONDS}-${MAX_ROUND_SECONDS} \u79d2\u4e4b\u95f4`;
+  }
+
+  return "";
+}
+
+function validateDrawTimesPerPlayer(drawTimesPerPlayer) {
+  const parsedDrawTimesPerPlayer = Number(drawTimesPerPlayer);
+
+  if (!Number.isInteger(parsedDrawTimesPerPlayer)) {
+    return "\u6bcf\u4eba\u7ed8\u753b\u6b21\u6570\u5fc5\u987b\u662f\u6574\u6570";
+  }
+
+  if (!ALLOWED_DRAW_TIMES.includes(parsedDrawTimesPerPlayer)) {
+    return "\u6bcf\u4eba\u7ed8\u753b\u6b21\u6570\u53ea\u80fd\u9009\u62e9 1 \u6b21\u6216 2 \u6b21";
+  }
+
+  return "";
+}
+
+function validateGameSettings({ roundSeconds, drawTimesPerPlayer } = {}) {
+  return validateRoundSeconds(roundSeconds) || validateDrawTimesPerPlayer(drawTimesPerPlayer);
 }
 
 function validateChatMessage(message) {
@@ -220,6 +368,12 @@ function buildRoomState(roomId) {
     minPlayers: MIN_PLAYERS,
     maxPlayers: room.maxPlayers,
     maxAllowedPlayers: MAX_PLAYERS,
+    settings: room.settings,
+    settingLimits: {
+      minRoundSeconds: MIN_ROUND_SECONDS,
+      maxRoundSeconds: MAX_ROUND_SECONDS,
+      allowedDrawTimes: ALLOWED_DRAW_TIMES,
+    },
     ownerPlayerId: room.ownerPlayerId,
   };
 }
@@ -234,23 +388,49 @@ function getScoreList(room) {
     .sort((left, right) => right.score - left.score || left.nickname.localeCompare(right.nickname));
 }
 
+function buildDrawOrder(players, drawTimesPerPlayer) {
+  const playerIds = players.map((player) => player.playerId);
+  const drawOrder = [];
+
+  for (let count = 0; count < drawTimesPerPlayer; count += 1) {
+    drawOrder.push(...shuffleItems(playerIds));
+  }
+
+  return drawOrder;
+}
+
+function updateRemainingSeconds(room) {
+  if (room.game.status !== "playing" || !room.game.roundEndsAt) {
+    room.game.remainingSeconds = 0;
+    return 0;
+  }
+
+  room.game.remainingSeconds = Math.max(0, Math.ceil((room.game.roundEndsAt - Date.now()) / 1000));
+  return room.game.remainingSeconds;
+}
+
 function buildGameStateForPlayer(roomId, playerId) {
   const room = rooms.get(roomId);
   const { game } = room;
   const currentDrawer = getRoomPlayers(room).find((player) => player.playerId === game.currentDrawerId);
   const isDrawer = game.status === "playing" && game.currentDrawerId === playerId;
+  const remainingSeconds = updateRemainingSeconds(room);
 
   return {
     status: game.status,
     message: game.message,
     isOwner: room.ownerPlayerId === playerId,
     canStart: room.ownerPlayerId === playerId && getRoomPlayers(room).length >= MIN_PLAYERS && game.status !== "playing",
+    canUpdateSettings: room.ownerPlayerId === playerId && game.status !== "playing",
     isDrawer,
     currentDrawerId: game.currentDrawerId,
     currentDrawerNickname: currentDrawer?.nickname || "",
     word: isDrawer ? game.currentWord : "",
     roundNumber: game.status === "playing" ? game.currentRoundIndex + 1 : 0,
     totalRounds: game.drawOrder.length,
+    remainingSeconds,
+    roundSeconds: room.settings.roundSeconds,
+    drawTimesPerPlayer: room.settings.drawTimesPerPlayer,
     scores: getScoreList(room),
     leaderboard: game.status === "ended" ? game.leaderboard : [],
   };
@@ -280,6 +460,75 @@ function emitGameStateToSocket(socket) {
   if (roomId && playerId && rooms.has(roomId)) {
     socket.emit("game:state", buildGameStateForPlayer(roomId, playerId));
   }
+}
+
+function clearRoundTimer(room) {
+  if (room.game.roundTimerId) {
+    clearInterval(room.game.roundTimerId);
+    room.game.roundTimerId = null;
+  }
+}
+
+function emitRoundTimer(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  io.to(roomId).emit("game:timer", {
+    remainingSeconds: updateRemainingSeconds(room),
+    roundSeconds: room.settings.roundSeconds,
+  });
+}
+
+function handleRoundTimerTick(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  if (room.game.status !== "playing") {
+    clearRoundTimer(room);
+    return;
+  }
+
+  const remainingSeconds = updateRemainingSeconds(room);
+  emitRoundTimer(roomId);
+
+  if (remainingSeconds > 0) {
+    return;
+  }
+
+  const answer = room.game.currentWord;
+  clearRoundTimer(room);
+  room.game.roundEndsAt = 0;
+  room.game.remainingSeconds = 0;
+
+  if (answer) {
+    emitSystemMessage(roomId, `\u65f6\u95f4\u5230\uff01\u7b54\u6848\u662f\uff1a${answer}`);
+  } else {
+    emitSystemMessage(roomId, "\u65f6\u95f4\u5230\uff0c\u8fdb\u5165\u4e0b\u4e00\u8f6e");
+  }
+
+  startNextRound(roomId);
+}
+
+function startRoundTimer(roomId) {
+  if (!rooms.has(roomId)) {
+    return;
+  }
+
+  const room = rooms.get(roomId);
+
+  clearRoundTimer(room);
+  room.game.remainingSeconds = room.settings.roundSeconds;
+  room.game.roundEndsAt = Date.now() + room.settings.roundSeconds * 1000;
+  room.game.roundTimerId = setInterval(() => {
+    handleRoundTimerTick(roomId);
+  }, 1000);
+  emitRoundTimer(roomId);
 }
 
 function createChatTime() {
@@ -318,12 +567,15 @@ function finishGame(roomId, message = "\u672c\u5c40\u7ed3\u675f") {
   }
 
   const room = rooms.get(roomId);
+  clearRoundTimer(room);
   room.game.status = "ended";
   room.game.currentDrawerId = "";
   room.game.currentWord = "";
   room.game.guessedPlayerIds = new Set();
   room.game.leaderboard = getScoreList(room);
   room.game.message = message;
+  room.game.remainingSeconds = 0;
+  room.game.roundEndsAt = 0;
   emitSystemMessage(roomId, message);
   emitGameState(roomId);
 }
@@ -342,6 +594,7 @@ function startNextRound(roomId) {
   }
 
   const room = rooms.get(roomId);
+  clearRoundTimer(room);
 
   if (getRoomPlayers(room).length < MIN_PLAYERS) {
     endGameForNotEnoughPlayers(roomId);
@@ -358,7 +611,7 @@ function startNextRound(roomId) {
   }
 
   if (room.game.currentRoundIndex >= room.game.drawOrder.length) {
-    finishGame(roomId, "\u6240\u6709\u73a9\u5bb6\u90fd\u5df2\u5b8c\u6210\u4e00\u6b21\u4f5c\u753b\uff0c\u6e38\u620f\u7ed3\u675f");
+    finishGame(roomId, "\u6240\u6709\u56de\u5408\u90fd\u5df2\u5b8c\u6210\uff0c\u6e38\u620f\u7ed3\u675f");
     return;
   }
 
@@ -372,6 +625,7 @@ function startNextRound(roomId) {
   const drawer = getRoomPlayers(room).find((player) => player.playerId === room.game.currentDrawerId);
   io.to(roomId).emit("draw:clear", { roomId });
   emitSystemMessage(roomId, `\u7b2c ${room.game.currentRoundIndex + 1} \u8f6e\u5f00\u59cb\uff0c${drawer.nickname} \u662f\u753b\u624b`);
+  startRoundTimer(roomId);
   emitGameState(roomId);
 }
 
@@ -379,14 +633,16 @@ function startGame(roomId) {
   const room = rooms.get(roomId);
   const players = getRoomPlayers(room);
 
+  clearRoundTimer(room);
   room.game = createGameState();
   room.game.status = "playing";
-  room.game.drawOrder = shuffleItems(players.map((player) => player.playerId));
+  room.game.drawOrder = buildDrawOrder(players, room.settings.drawTimesPerPlayer);
   room.game.scores = Object.fromEntries(players.map((player) => [player.playerId, 0]));
   room.game.message = "\u6e38\u620f\u5df2\u5f00\u59cb";
   room.drawHistory = [];
 
   emitSystemMessage(roomId, "\u6e38\u620f\u5f00\u59cb");
+  emitRoomUpdate(roomId);
   startNextRound(roomId);
 }
 
@@ -431,6 +687,7 @@ function leaveCurrentRoom(socket) {
   socket.leave(roomId);
 
   if (room.players.size === 0) {
+    clearRoundTimer(room);
     rooms.delete(roomId);
     console.log(`Room removed: ${roomId}`);
   } else {
@@ -537,6 +794,7 @@ io.on("connection", (socket) => {
     rooms.set(roomId, {
       ownerPlayerId,
       maxPlayers: MAX_PLAYERS,
+      settings: createDefaultSettings(),
       drawHistory: [],
       game: createGameState(),
       players: new Map(),
@@ -669,7 +927,7 @@ io.on("connection", (socket) => {
     callback?.({ ok: true, room: buildRoomState(roomId) });
   });
 
-  socket.on("game:start", (callback) => {
+  socket.on("game:updateSettings", ({ roundSeconds, drawTimesPerPlayer } = {}, callback) => {
     const { roomId, playerId } = socket.data;
 
     if (!roomId || !rooms.has(roomId)) {
@@ -680,27 +938,70 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
 
     if (room.ownerPlayerId !== playerId) {
-      callback?.({ ok: false, message: "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u5f00\u59cb\u6e38\u620f" });
-      return;
-    }
-
-    if (getRoomPlayers(room).length < MIN_PLAYERS) {
-      callback?.({ ok: false, message: "\u81f3\u5c11 2 \u4eba\u624d\u80fd\u5f00\u59cb\u6e38\u620f" });
-      return;
-    }
-
-    if (getRoomPlayers(room).length > MAX_PLAYERS) {
-      callback?.({ ok: false, message: "\u6bcf\u5c40\u6700\u591a 8 \u4eba" });
+      callback?.({ ok: false, message: "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u4fee\u6539\u6e38\u620f\u8bbe\u7f6e" });
       return;
     }
 
     if (room.game.status === "playing") {
-      callback?.({ ok: false, message: "\u6e38\u620f\u5df2\u7ecf\u5f00\u59cb" });
+      callback?.({ ok: false, message: "\u6e38\u620f\u5f00\u59cb\u540e\u4e0d\u80fd\u4fee\u6539\u8bbe\u7f6e" });
+      return;
+    }
+
+    const settingsError = validateGameSettings({ roundSeconds, drawTimesPerPlayer });
+
+    if (settingsError) {
+      callback?.({ ok: false, message: settingsError });
+      return;
+    }
+
+    room.settings = {
+      roundSeconds: Number(roundSeconds),
+      drawTimesPerPlayer: Number(drawTimesPerPlayer),
+    };
+
+    emitRoomUpdate(roomId);
+    emitGameState(roomId);
+    emitSystemMessage(
+      roomId,
+      `\u6e38\u620f\u8bbe\u7f6e\u5df2\u66f4\u65b0\uff1a\u6bcf\u8f6e ${room.settings.roundSeconds} \u79d2\uff0c\u6bcf\u4eba\u4f5c\u753b ${room.settings.drawTimesPerPlayer} \u6b21`
+    );
+
+    callback?.({ ok: true, room: buildRoomState(roomId) });
+  });
+
+  socket.on("game:start", (callback) => {
+    const respond = typeof callback === "function" ? callback : () => {};
+    const { roomId, playerId } = socket.data;
+
+    if (!roomId || !rooms.has(roomId)) {
+      respond({ ok: false, message: "\u4f60\u5df2\u4e0d\u5728\u623f\u95f4\u4e2d" });
+      return;
+    }
+
+    const room = rooms.get(roomId);
+
+    if (room.ownerPlayerId !== playerId) {
+      respond({ ok: false, message: "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u5f00\u59cb\u6e38\u620f" });
+      return;
+    }
+
+    if (getRoomPlayers(room).length < MIN_PLAYERS) {
+      respond({ ok: false, message: "\u81f3\u5c11 2 \u4eba\u624d\u80fd\u5f00\u59cb\u6e38\u620f" });
+      return;
+    }
+
+    if (getRoomPlayers(room).length > MAX_PLAYERS) {
+      respond({ ok: false, message: "\u6bcf\u5c40\u6700\u591a 8 \u4eba" });
+      return;
+    }
+
+    if (room.game.status === "playing") {
+      respond({ ok: false, message: "\u6e38\u620f\u5df2\u7ecf\u5f00\u59cb" });
       return;
     }
 
     startGame(roomId);
-    callback?.({ ok: true });
+    respond({ ok: true });
   });
 
   socket.on("draw", (stroke) => {

@@ -72,6 +72,7 @@
             <div class="game-panel">
               <button class="primary-button" id="startGameButton" type="button">&#24320;&#22987;&#28216;&#25103;</button>
               <p class="game-status" id="gameStatusText">&#31561;&#24453;&#25151;&#20027;&#24320;&#22987;&#28216;&#25103;</p>
+              <p class="timer-text hidden" id="roundTimerText">&#21097;&#20313;&#26102;&#38388;&#65306;-- &#31186;</p>
               <p class="muted small-text" id="currentDrawerText"></p>
               <div class="word-panel hidden" id="wordPanel">
                 <span id="wordLabel">&#24403;&#21069;&#25552;&#31034;</span>
@@ -80,12 +81,28 @@
               <ol class="leaderboard hidden" id="leaderboardList"></ol>
             </div>
             <div class="room-settings">
-              <label for="maxPlayersInput">&#25151;&#38388;&#20154;&#25968;&#19978;&#38480;</label>
-              <div class="limit-row">
-                <input id="maxPlayersInput" type="number" min="2" max="8" step="1" />
-                <button class="secondary-button" id="updateMaxPlayersButton" type="button">&#20445;&#23384;</button>
+              <div class="settings-block">
+                <h3>&#28216;&#25103;&#35774;&#32622;</h3>
+                <label for="roundSecondsInput">&#27599;&#36718;&#26102;&#38388;&#65288;&#31186;&#65289;</label>
+                <div class="settings-row">
+                  <input id="roundSecondsInput" type="number" min="30" max="180" step="1" value="60" />
+                  <select id="drawTimesSelect" aria-label="&#27599;&#20154;&#32472;&#30011;&#27425;&#25968;">
+                    <option value="1">&#27599;&#20154; 1 &#27425;</option>
+                    <option value="2">&#27599;&#20154; 2 &#27425;</option>
+                  </select>
+                  <button class="secondary-button" id="updateGameSettingsButton" type="button">&#20445;&#23384;&#35774;&#32622;</button>
+                </div>
+                <p class="muted small-text" id="gameSettingsHint"></p>
               </div>
-              <p class="muted small-text" id="roomLimitHint"></p>
+              <div class="settings-block">
+                <h3>&#25151;&#38388;&#35774;&#32622;</h3>
+                <label for="maxPlayersInput">&#25151;&#38388;&#20154;&#25968;&#19978;&#38480;</label>
+                <div class="limit-row">
+                  <input id="maxPlayersInput" type="number" min="2" max="8" step="1" />
+                  <button class="secondary-button" id="updateMaxPlayersButton" type="button">&#20445;&#23384;</button>
+                </div>
+                <p class="muted small-text" id="roomLimitHint"></p>
+              </div>
             </div>
           </div>
           <div class="room-card drawing-card">
@@ -120,6 +137,7 @@
               <button class="danger-button" id="clearCanvasButton" type="button">&#28165;&#31354;&#30011;&#26495;</button>
             </div>
             <div class="canvas-wrap">
+              <span class="canvas-timer hidden" id="canvasTimerText" aria-live="polite">&#21097;&#20313; -- &#31186;</span>
               <canvas id="drawingCanvas" aria-label="&#26412;&#22320;&#30011;&#26495;"></canvas>
             </div>
           </div>

@@ -20,6 +20,10 @@ const roomNotice = document.getElementById("roomNotice");
 const maxPlayersInput = document.getElementById("maxPlayersInput");
 const updateMaxPlayersButton = document.getElementById("updateMaxPlayersButton");
 const roomLimitHint = document.getElementById("roomLimitHint");
+const roundSecondsInput = document.getElementById("roundSecondsInput");
+const drawTimesSelect = document.getElementById("drawTimesSelect");
+const updateGameSettingsButton = document.getElementById("updateGameSettingsButton");
+const gameSettingsHint = document.getElementById("gameSettingsHint");
 const chatMessages = document.getElementById("chatMessages");
 const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
@@ -36,6 +40,8 @@ const brushSizeText = document.getElementById("brushSizeText");
 const clearCanvasButton = document.getElementById("clearCanvasButton");
 const startGameButton = document.getElementById("startGameButton");
 const gameStatusText = document.getElementById("gameStatusText");
+const roundTimerText = document.getElementById("roundTimerText");
+const canvasTimerText = document.getElementById("canvasTimerText");
 const currentDrawerText = document.getElementById("currentDrawerText");
 const wordPanel = document.getElementById("wordPanel");
 const wordLabel = document.getElementById("wordLabel");
@@ -64,6 +70,8 @@ let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
 const chatMessageMaxLength = 100;
 const drawSendIntervalMs = 25;
+const defaultRoundSeconds = 60;
+const defaultDrawTimesPerPlayer = 1;
 
 function setConnectionStatus(text, className) {
   connectionStatus.textContent = text;
@@ -150,6 +158,32 @@ function validateMaxPlayers(value) {
 
   if (nextMaxPlayers < currentRoom.currentPlayers) {
     return "\u623f\u95f4\u4eba\u6570\u4e0d\u80fd\u5c0f\u4e8e\u5f53\u524d\u5df2\u52a0\u5165\u4eba\u6570";
+  }
+
+  return "";
+}
+
+function validateGameSettings() {
+  if (!currentRoom) {
+    return "\u623f\u95f4\u72b6\u6001\u4e0d\u5b58\u5728";
+  }
+
+  const roundSeconds = Number(roundSecondsInput.value);
+  const drawTimesPerPlayer = Number(drawTimesSelect.value);
+  const minRoundSeconds = currentRoom.settingLimits?.minRoundSeconds || 30;
+  const maxRoundSeconds = currentRoom.settingLimits?.maxRoundSeconds || 180;
+  const allowedDrawTimes = currentRoom.settingLimits?.allowedDrawTimes || [1, 2];
+
+  if (!Number.isInteger(roundSeconds)) {
+    return "\u6bcf\u8f6e\u65f6\u95f4\u5fc5\u987b\u662f\u6574\u6570";
+  }
+
+  if (roundSeconds < minRoundSeconds || roundSeconds > maxRoundSeconds) {
+    return `\u6bcf\u8f6e\u65f6\u95f4\u5fc5\u987b\u5728 ${minRoundSeconds}-${maxRoundSeconds} \u79d2\u4e4b\u95f4`;
+  }
+
+  if (!allowedDrawTimes.includes(drawTimesPerPlayer)) {
+    return "\u6bcf\u4eba\u7ed8\u753b\u6b21\u6570\u53ea\u80fd\u9009\u62e9 1 \u6b21\u6216 2 \u6b21";
   }
 
   return "";
@@ -647,12 +681,56 @@ function renderPlayers(room) {
   });
 }
 
+function renderRoundTimer(remainingSeconds = 0) {
+  if (!currentGameState || currentGameState.status !== "playing") {
+    roundTimerText.classList.add("hidden");
+    canvasTimerText.classList.add("hidden");
+    roundTimerText.textContent = "\u5269\u4f59\u65f6\u95f4\uff1a-- \u79d2";
+    canvasTimerText.textContent = "\u5269\u4f59 -- \u79d2";
+    return;
+  }
+
+  const seconds = Math.max(0, Number(remainingSeconds) || 0);
+  roundTimerText.classList.remove("hidden");
+  canvasTimerText.classList.remove("hidden");
+  roundTimerText.textContent = `\u5269\u4f59\u65f6\u95f4\uff1a${seconds} \u79d2`;
+  canvasTimerText.textContent = `\u5269\u4f59 ${seconds} \u79d2`;
+}
+
+function updateGameSettingsControls() {
+  if (!currentRoom) {
+    return;
+  }
+
+  const isOwner = currentRoom.ownerPlayerId === currentPlayerId;
+  const gameStatus = currentGameState?.status || "waiting";
+  const canUpdateSettings = isOwner && gameStatus !== "playing";
+
+  roundSecondsInput.disabled = !canUpdateSettings;
+  drawTimesSelect.disabled = !canUpdateSettings;
+  updateGameSettingsButton.disabled = !canUpdateSettings;
+
+  if (!isOwner) {
+    gameSettingsHint.textContent = "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u4fee\u6539\u6e38\u620f\u8bbe\u7f6e";
+    return;
+  }
+
+  gameSettingsHint.textContent =
+    gameStatus === "playing"
+      ? "\u6e38\u620f\u8fdb\u884c\u4e2d\u4e0d\u53ef\u4fee\u6539\u8bbe\u7f6e"
+      : "\u53ef\u8bbe\u7f6e 30-180 \u79d2\uff0c\u6bcf\u4eba\u4f5c\u753b 1 \u6b21\u6216 2 \u6b21";
+}
+
 function renderRoom(room) {
   currentRoom = room;
   currentRoomId = room.roomId;
   roomIdText.textContent = room.roomId;
   roomCountText.textContent = `\u5f53\u524d\u4eba\u6570\uff1a${room.currentPlayers}/${room.maxPlayers}`;
   playerRangeText.textContent = `${room.currentPlayers}/${room.maxPlayers} \u4eba`;
+  roundSecondsInput.min = room.settingLimits?.minRoundSeconds || 30;
+  roundSecondsInput.max = room.settingLimits?.maxRoundSeconds || 180;
+  roundSecondsInput.value = room.settings?.roundSeconds || defaultRoundSeconds;
+  drawTimesSelect.value = String(room.settings?.drawTimesPerPlayer || defaultDrawTimesPerPlayer);
   maxPlayersInput.min = room.minPlayers;
   maxPlayersInput.max = room.maxAllowedPlayers;
   maxPlayersInput.value = room.maxPlayers;
@@ -663,6 +741,7 @@ function renderRoom(room) {
   roomLimitHint.textContent = isOwner
     ? `\u53ef\u8bbe\u7f6e ${room.minPlayers}-${room.maxAllowedPlayers} \u4eba\uff0c\u4e0d\u80fd\u5c0f\u4e8e\u5f53\u524d\u4eba\u6570`
     : "\u53ea\u6709\u623f\u4e3b\u53ef\u4ee5\u4fee\u6539\u623f\u95f4\u4eba\u6570";
+  updateGameSettingsControls();
   renderPlayers(room);
 }
 
@@ -683,7 +762,9 @@ function renderGameState(gameState) {
     roomView.classList.remove("is-drawer", "is-guesser");
     startGameButton.disabled = false;
     startGameButton.classList.remove("hidden");
+    startGameButton.textContent = "\u5f00\u59cb\u6e38\u620f";
     gameStatusText.textContent = "\u7b49\u5f85\u623f\u4e3b\u5f00\u59cb\u6e38\u620f";
+    renderRoundTimer(0);
     currentDrawerText.textContent = "";
     wordPanel.classList.add("hidden");
     wordText.textContent = "";
@@ -703,7 +784,9 @@ function renderGameState(gameState) {
   roomView.classList.toggle("is-guesser", isPlaying && !isDrawer);
   startGameButton.disabled = !gameState.canStart;
   startGameButton.classList.toggle("hidden", !gameState.isOwner);
+  startGameButton.textContent = isEnded ? "\u518d\u6765\u4e00\u5c40" : "\u5f00\u59cb\u6e38\u620f";
   gameStatusText.textContent = gameState.message || "\u7b49\u5f85\u5f00\u59cb\u6e38\u620f";
+  renderRoundTimer(gameState.remainingSeconds);
   currentDrawerText.textContent = isPlaying
     ? `\u7b2c ${gameState.roundNumber}/${gameState.totalRounds} \u8f6e\uff0c\u753b\u624b\uff1a${gameState.currentDrawerNickname}`
     : "";
@@ -720,6 +803,7 @@ function renderGameState(gameState) {
   setDrawingEnabled(!isPlaying || isDrawer);
   renderLeaderboard(isEnded ? gameState.leaderboard : gameState.scores);
   leaderboardList.classList.toggle("hidden", !isEnded);
+  updateGameSettingsControls();
   scheduleDrawingCanvasResize();
 }
 
@@ -890,6 +974,35 @@ updateMaxPlayersButton.addEventListener("click", () => {
   });
 });
 
+updateGameSettingsButton.addEventListener("click", () => {
+  const gameSettingsError = validateGameSettings();
+
+  if (gameSettingsError) {
+    showNotice(gameSettingsError);
+    return;
+  }
+
+  updateGameSettingsButton.disabled = true;
+
+  socket.emit(
+    "game:updateSettings",
+    {
+      roundSeconds: Number(roundSecondsInput.value),
+      drawTimesPerPlayer: Number(drawTimesSelect.value),
+    },
+    (response) => {
+      if (!response?.ok) {
+        updateGameSettingsControls();
+        showNotice(response?.message || "\u4fee\u6539\u6e38\u620f\u8bbe\u7f6e\u5931\u8d25");
+        return;
+      }
+
+      renderRoom(response.room);
+      showNotice("\u6e38\u620f\u8bbe\u7f6e\u5df2\u66f4\u65b0");
+    }
+  );
+});
+
 startGameButton.addEventListener("click", () => {
   startGameButton.disabled = true;
 
@@ -961,6 +1074,16 @@ socket.on("chat:message", (message) => {
 
 socket.on("game:state", (gameState) => {
   renderGameState(gameState);
+});
+
+socket.on("game:timer", ({ remainingSeconds, roundSeconds } = {}) => {
+  if (!currentGameState || currentGameState.status !== "playing") {
+    return;
+  }
+
+  currentGameState.remainingSeconds = Math.max(0, Number(remainingSeconds) || 0);
+  currentGameState.roundSeconds = Number(roundSeconds) || currentGameState.roundSeconds;
+  renderRoundTimer(currentGameState.remainingSeconds);
 });
 
 socket.on("draw", (stroke) => {
