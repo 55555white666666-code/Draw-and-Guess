@@ -438,12 +438,16 @@ h2 {
   order: 1;
 }
 
+.drawing-card .word-panel {
+  order: 2;
+}
+
 .drawing-tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: end;
-  order: 3;
+  order: 4;
 }
 
 .drawing-tools > * {
@@ -542,7 +546,7 @@ h2 {
   border: 1px solid #dbe3f0;
   border-radius: 8px;
   background: #ffffff;
-  order: 2;
+  order: 3;
 }
 
 .canvas-timer {
@@ -754,7 +758,7 @@ h2 {
   }
 
   .canvas-wrap {
-    width: min(100%, calc((100dvh - 130px) * 4 / 3));
+    width: min(100%, calc((100dvh - 170px) * 4 / 3));
     justify-self: center;
   }
 
@@ -833,11 +837,12 @@ h2 {
   }
 
   .word-panel {
-    padding: 8px;
+    gap: 2px;
+    padding: 6px 8px;
   }
 
   .word-panel strong {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
   .room-settings {
