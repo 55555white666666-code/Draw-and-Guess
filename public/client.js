@@ -10,6 +10,10 @@ const joinRoomButton = document.getElementById("joinRoomButton");
 const errorMessage = document.getElementById("errorMessage");
 const roomIdText = document.getElementById("roomIdText");
 const roomCountText = document.getElementById("roomCountText");
+const statusRoomIdText = document.getElementById("statusRoomIdText");
+const statusDrawerText = document.getElementById("statusDrawerText");
+const statusRoundText = document.getElementById("statusRoundText");
+const statusTimerText = document.getElementById("statusTimerText");
 const playerRangeText = document.getElementById("playerRangeText");
 const playerIdText = document.getElementById("playerIdText");
 const playerList = document.getElementById("playerList");
@@ -729,6 +733,7 @@ function renderRoundTimer(remainingSeconds = 0) {
     canvasTimerText.classList.add("hidden");
     roundTimerText.textContent = "\u5269\u4f59\u65f6\u95f4\uff1a-- \u79d2";
     canvasTimerText.textContent = "\u5269\u4f59 -- \u79d2";
+    statusTimerText.textContent = "-- \u79d2";
     return;
   }
 
@@ -737,6 +742,22 @@ function renderRoundTimer(remainingSeconds = 0) {
   canvasTimerText.classList.remove("hidden");
   roundTimerText.textContent = `\u5269\u4f59\u65f6\u95f4\uff1a${seconds} \u79d2`;
   canvasTimerText.textContent = `\u5269\u4f59 ${seconds} \u79d2`;
+  statusTimerText.textContent = `${seconds} \u79d2`;
+}
+
+function renderStatusBar(gameState = currentGameState) {
+  statusRoomIdText.textContent = currentRoomId || "------";
+
+  if (!gameState || gameState.status !== "playing") {
+    statusDrawerText.textContent = gameState?.status === "ended" ? "\u672c\u5c40\u7ed3\u675f" : "\u7b49\u5f85\u5f00\u59cb";
+    statusRoundText.textContent = "-- / --";
+    renderRoundTimer(0);
+    return;
+  }
+
+  statusDrawerText.textContent = gameState.currentDrawerNickname || "\u51c6\u5907\u4e2d";
+  statusRoundText.textContent = `${gameState.roundNumber || 0} / ${gameState.totalRounds || 0}`;
+  renderRoundTimer(gameState.remainingSeconds);
 }
 
 function updateGameSettingsControls() {
@@ -767,6 +788,7 @@ function renderRoom(room) {
   currentRoom = room;
   currentRoomId = room.roomId;
   roomIdText.textContent = room.roomId;
+  statusRoomIdText.textContent = room.roomId;
   roomCountText.textContent = `\u5f53\u524d\u4eba\u6570\uff1a${room.currentPlayers}/${room.maxPlayers}`;
   playerRangeText.textContent = `${room.currentPlayers}/${room.maxPlayers} \u4eba`;
   roundSecondsInput.min = room.settingLimits?.minRoundSeconds || 30;
@@ -806,7 +828,7 @@ function renderGameState(gameState) {
     startGameButton.classList.remove("hidden");
     startGameButton.textContent = "\u5f00\u59cb\u6e38\u620f";
     gameStatusText.textContent = "\u7b49\u5f85\u623f\u4e3b\u5f00\u59cb\u6e38\u620f";
-    renderRoundTimer(0);
+    renderStatusBar(null);
     currentDrawerText.textContent = "";
     wordPanel.classList.add("hidden");
     wordText.textContent = "";
@@ -828,7 +850,7 @@ function renderGameState(gameState) {
   startGameButton.classList.toggle("hidden", !gameState.isOwner);
   startGameButton.textContent = isEnded ? "\u518d\u6765\u4e00\u5c40" : "\u5f00\u59cb\u6e38\u620f";
   gameStatusText.textContent = gameState.message || "\u7b49\u5f85\u5f00\u59cb\u6e38\u620f";
-  renderRoundTimer(gameState.remainingSeconds);
+  renderStatusBar(gameState);
   currentDrawerText.textContent = isPlaying
     ? `\u7b2c ${gameState.roundNumber}/${gameState.totalRounds} \u8f6e\uff0c\u753b\u624b\uff1a${gameState.currentDrawerNickname}`
     : "";
